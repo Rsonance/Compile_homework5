@@ -8,6 +8,7 @@
 @Date    ：2025/5/22 14:35 
 """
 
+import re
 from table_of_SLR import action_table, goto_table, productions
 
 # 三元式中间代码
@@ -21,18 +22,42 @@ def new_temp():
     return temp
 
 def parse_tokens(token_lines):
-    """将 token 流转为 [(symbol, value), ...]"""
+    """将 token 文件内容转为 [(token_type, token_val), ...] 格式"""
     tokens = []
     for line in token_lines:
         line = line.strip()
-        if line:
-            sym, val = line.strip("()\n ").split(",", 1)
-            tokens.append((sym.strip(), val.strip()))
+        if not line:
+            continue
+        match = re.match(r"^\(\s*(\w+)\s*,\s*(.*?)\s*\)\s*$", line)
+
+        if match:
+            token_type, token_val = match.groups()
+            tokens.append((token_type, token_val))
+        else:
+            print(f"无法解析 token 行: {line}")
     tokens.append(("$", "$"))  # 结束符
     return tokens
 
+def map_token_to_symbol(token_type, token_val):
+    """将词法 token 映射为语法分析用的终结符"""
+    if token_type == "ID":
+        return "d"
+    elif token_type == "NUMBER":
+        return "i"
+    elif token_type == "KEY":
+        return token_val  # 如 int, return
+    elif token_type in {"LPA", "RPA", "LBR", "RBR", "SCO", "ASG"}:
+        return token_val  # 如 (, ), {, }, ;, =
+    else:
+        return token_val  # 默认按原值处理
+
 def parse(tokens):
-    state_stack = [0]
+    #print("\n映射后的终结符序列：")
+    #for i, (token_type, token_val) in enumerate(tokens):
+    #    mapped = map_token_to_symbol(token_type, token_val)
+    #    print(f"{i}: ({token_type}, {token_val}) -> '{mapped}'")
+
+    state_stack = [1]
     symbol_stack = []
     value_stack = []
 
@@ -40,18 +65,20 @@ def parse(tokens):
     while True:
         state = state_stack[-1]
         token_type, token_val = tokens[index]
-        action = action_table.get((state, token_type))
+        symbol = map_token_to_symbol(token_type, token_val)
+        action = action_table.get((state, symbol))
+
         if action is None:
             print(f"语法错误 at token {token_type} ({token_val}) in state {state}")
             break
 
-        if action[0] == "s":  # 移入
+        if action.startswith("s"):  # 移入
             next_state = int(action[1:])
             state_stack.append(next_state)
-            symbol_stack.append(token_type)
+            symbol_stack.append(symbol)
             value_stack.append(token_val)
             index += 1
-        elif action[0] == "r":  # 规约
+        elif action.startswith("r"):  # 规约
             prod_index = int(action[1:])
             lhs, rhs = productions[prod_index]
             rhs_len = len(rhs)
@@ -62,7 +89,7 @@ def parse(tokens):
             del symbol_stack[-rhs_len:]
             del value_stack[-rhs_len:]
 
-            # 处理规约语义动作（简单示例，需根据具体产生式拓展）
+            # 简单语义动作（示例）
             if lhs == "E":
                 if rhs == ["E", "+", "E"]:
                     t2 = args.pop()
@@ -81,7 +108,7 @@ def parse(tokens):
                 elif len(rhs) == 1:
                     args = [args[0]]
 
-            elif lhs == "S" and rhs == ["d", "=", "E"]:
+            elif lhs == "S" and rhs == ["id", "=", "E"]:
                 var = args[0]
                 val = args[2]
                 three_address_code.append((var, "=", val))

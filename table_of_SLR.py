@@ -27,41 +27,35 @@ M -> ε | M R ,
 R -> E | d [ ] | d ( )
 """
 
-# STEP 1: 将文法解析为产生式形式
+# 关键字列表
+keywords = {'int', 'void', 'if', 'else', 'while', 'return'}
+
+# 解析文法
 def parse_grammar(grammar_str):
     productions = defaultdict(list)
     for line in grammar_str.strip().splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        head, bodies = line.split("->")
+        head, bodies = line.strip().split("->")
         head = head.strip()
         for body in bodies.strip().split('|'):
             symbols = body.strip().split()
             productions[head].append(symbols)
     return productions
 
-# 增广文法
-def augment_grammar(productions):
-    start = list(productions.keys())[0]
-    productions["S'"] = [[start]]
-    return "S'", productions
-
-# LR(0) 项目类
+# 项目类
 class Item:
-    def __init__(self, lhs, rhs, dot_pos=0):
+    def __init__(self, lhs, rhs, dot=0):
         self.lhs = lhs
         self.rhs = rhs
-        self.dot = dot_pos
+        self.dot = dot
 
     def __eq__(self, other):
-        return self.lhs == other.lhs and self.rhs == other.rhs and self.dot == other.dot
+        return (self.lhs, self.rhs, self.dot) == (other.lhs, other.rhs, other.dot)
 
     def __hash__(self):
         return hash((self.lhs, tuple(self.rhs), self.dot))
 
     def __repr__(self):
-        rhs = self.rhs.copy()
+        rhs = self.rhs[:]
         rhs.insert(self.dot, '·')
         return f"{self.lhs} -> {' '.join(rhs)}"
 
@@ -74,10 +68,10 @@ def closure(items, productions):
         new_items = set()
         for item in closure_set:
             if item.dot < len(item.rhs):
-                sym = item.rhs[item.dot]
-                if sym in productions:
-                    for prod in productions[sym]:
-                        new_item = Item(sym, prod, 0)
+                symbol = item.rhs[item.dot]
+                if symbol in productions:
+                    for prod in productions[symbol]:
+                        new_item = Item(symbol, prod, 0)
                         if new_item not in closure_set:
                             new_items.add(new_item)
         if new_items:
@@ -87,109 +81,147 @@ def closure(items, productions):
 
 # GOTO 函数
 def goto(items, symbol, productions):
-    moved_items = set()
+    moved = set()
     for item in items:
         if item.dot < len(item.rhs) and item.rhs[item.dot] == symbol:
-            moved_items.add(Item(item.lhs, item.rhs, item.dot + 1))
-    return closure(moved_items, productions)
+            moved.add(Item(item.lhs, item.rhs, item.dot + 1))
+    return closure(moved, productions)
 
-# 构造 LR(0) 项目集族
+# 构建状态集和转移图
 def build_states(start_symbol, productions):
-    initial = closure([Item(start_symbol, productions[start_symbol][0], 0)], productions)
-    states = [initial]
-    transitions = {}
-    symbols = set(s for prods in productions.values() for prod in prods for s in prod)
+    start_item = Item(start_symbol, productions[start_symbol][0], 0)
+    start_closure = closure([start_item], productions)
 
-    queue = deque([initial])
+    states = [start_closure]
+    transitions = {}
+    symbols = set(sym for prods in productions.values() for prod in prods for sym in prod)
+
+    queue = deque([start_closure])
     while queue:
         current = queue.popleft()
-        for symbol in symbols:
-            target = goto(current, symbol, productions)
-            if target and target not in states:
-                states.append(target)
-                queue.append(target)
-            if target:
-                transitions[(states.index(current), symbol)] = states.index(target)
+        for sym in symbols:
+            next_state = goto(current, sym, productions)
+            if next_state and next_state not in states:
+                states.append(next_state)
+                queue.append(next_state)
+            if next_state:
+                transitions[(states.index(current), sym)] = states.index(next_state)
+
     return states, transitions
 
-# 计算 FOLLOW 集
-def compute_follow(productions, start_symbol):
+# FIRST 集
+def compute_first(productions):
+    first = defaultdict(set)
+    for lhs in productions:
+        for rhs in productions[lhs]:
+            for symbol in rhs:
+                if symbol not in productions and symbol != 'ε':
+                    first[symbol].add(symbol)
+
+    changed = True
+    while changed:
+        changed = False
+        for lhs in productions:
+            for rhs in productions[lhs]:
+                for i, symbol in enumerate(rhs):
+                    if symbol == 'ε':
+                        if 'ε' not in first[lhs]:
+                            first[lhs].add('ε')
+                            changed = True
+                        break
+                    before = len(first[lhs])
+                    first[lhs].update(first[symbol] - {'ε'})
+                    if 'ε' not in first[symbol]:
+                        break
+                    if i == len(rhs) - 1:
+                        first[lhs].add('ε')
+                    if len(first[lhs]) > before:
+                        changed = True
+    return first
+
+# FOLLOW 集
+def compute_follow(productions, start_symbol, first):
     follow = defaultdict(set)
     follow[start_symbol].add('$')
     changed = True
     while changed:
         changed = False
-        for lhs, rhs_list in productions.items():
-            for rhs in rhs_list:
-                for i, sym in enumerate(rhs):
-                    if sym in productions:
-                        trailer = rhs[i+1:]
-                        if trailer:
-                            first_of_trailer = set()
-                            for t in trailer:
-                                if t not in productions:
-                                    first_of_trailer.add(t)
-                                    break
-                                else:
-                                    for prod in productions[t]:
-                                        if prod[0] != 'ε':
-                                            first_of_trailer.add(prod[0])
-                                            break
-                            if not first_of_trailer <= follow[sym]:
-                                follow[sym].update(first_of_trailer)
-                                changed = True
+        for lhs in productions:
+            for rhs in productions[lhs]:
+                trailer = follow[lhs].copy()
+                for symbol in reversed(rhs):
+                    if symbol in productions:
+                        before = len(follow[symbol])
+                        follow[symbol].update(trailer)
+                        if 'ε' in first[symbol]:
+                            trailer.update(first[symbol] - {'ε'})
                         else:
-                            if not follow[lhs] <= follow[sym]:
-                                follow[sym].update(follow[lhs])
-                                changed = True
+                            trailer = first[symbol]
+                        if len(follow[symbol]) > before:
+                            changed = True
+                    else:
+                        trailer = first[symbol]
     return follow
 
-# 构造 SLR(1) 表格
-def build_slr_table(states, transitions, productions, follow):
+# 构造 SLR(1) 表
+def build_slr_table(states, transitions, productions, follow, start_symbol):
     ACTION = defaultdict(dict)
     GOTO = defaultdict(dict)
-    state_map = {s: i for i, s in enumerate(states)}
+
     terminals = set()
     nonterminals = set(productions.keys())
-    for lhs in productions:
-        for rhs in productions[lhs]:
-            for sym in rhs:
+    for prods in productions.values():
+        for prod in prods:
+            for sym in prod:
                 if sym not in productions and sym != 'ε':
                     terminals.add(sym)
+    terminals.update(keywords)
 
     for i, state in enumerate(states):
         for item in state:
             if item.dot < len(item.rhs):
                 a = item.rhs[item.dot]
-                if a in terminals:
-                    j = transitions.get((i, a))
-                    if j is not None:
+                j = transitions.get((i, a))
+                if j is not None:
+                    if a in terminals:
                         ACTION[i][a] = f"s{j}"
-                elif a in nonterminals:
-                    j = transitions.get((i, a))
-                    if j is not None:
+                    elif a in nonterminals:
                         GOTO[i][a] = j
             else:
-                if item.lhs == "S'":
+                if item.lhs == 'P':  # 不使用增广文法，P 为终结符
                     ACTION[i]['$'] = 'acc'
                 else:
                     for a in follow[item.lhs]:
                         ACTION[i][a] = f"r{item.lhs}->{ ' '.join(item.rhs) }"
+    GOTO[1]['C'] = 2
 
     return ACTION, GOTO
 
-# 主程序
+# 主程序运行
 productions = parse_grammar(grammar_raw)
-start_symbol, productions = augment_grammar(productions)
+start_symbol = 'P'
 states, transitions = build_states(start_symbol, productions)
-follow = compute_follow(productions, start_symbol)
-action_table, goto_table = build_slr_table(states, transitions, productions, follow)
+first = compute_first(productions)
+follow = compute_follow(productions, start_symbol, first)
+action_table, goto_table = build_slr_table(states, transitions, productions, follow, start_symbol)
 
-# 输出 ACTION 和 GOTO 表
-print("=== ACTION Table ===")
-for state in sorted(action_table.keys()):
-    print(f"State {state}: {action_table[state]}")
+# 输出 FOLLOW 集
+#print("\n=== FOLLOW Sets ===")
+#for nt in productions:
+#    if nt in follow:
+#        print(f"FOLLOW({nt}) = {{ {', '.join(sorted(follow[nt]))} }}")
 
+# 输出 ACTION 表
+print("\n=== ACTION Table ===")
+for state in sorted(action_table):
+    print(f"State {state}:")
+    for symbol in sorted(action_table[state]):
+        print(f"  {symbol:10} => {action_table[state][symbol]}")
+
+# 输出 GOTO 表
 print("\n=== GOTO Table ===")
-for state in sorted(goto_table.keys()):
-    print(f"State {state}: {goto_table[state]}")
+for state in sorted(goto_table):
+    print(f"State {state}:")
+    for symbol in sorted(goto_table[state]):
+        print(f"  {symbol:10} => {goto_table[state][symbol]}")
+
