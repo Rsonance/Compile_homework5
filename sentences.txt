@@ -1,0 +1,12 @@
+P->CQ
+C->ε|CD;
+D->Td|Td[i]|Td(N){CQ}
+T->int|void
+N->ε|NA;
+A->Td|d[]|Td()
+Q->S|Q;S
+S->d=E|if(B) S|if (B) S else S| while (B) S|return E|{Q}|d(M)
+B->B∧B|B∨B|ErE|E
+E->d=E|i|d|d(M)|E+E|E*E|(E)
+M->ε|MR,
+R->E|d[]|d()
