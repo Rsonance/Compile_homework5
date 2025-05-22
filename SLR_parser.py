@@ -1,6 +1,5 @@
-#!/usr/bin/env python
+# !/usr/bin/env python
 # -*- coding: UTF-8 -*-
-
 
 import re
 from typing import List, Tuple, Dict, Any, Optional
@@ -15,24 +14,24 @@ class TokenMapper:
     def map_token_to_symbol(token_type: str, token_val: str) -> str:
         """将词法token映射为语法分析用的终结符"""
         token_map = {
-            "ID": "d",
-            "NUMBER": "i",
-            "LPA": "(",
-            "RPA": ")",
-            "LBR": "[",
-            "RBR": "]",
-            "LCU": "{",
-            "RCU": "}",
-            "SCO": ";",
-            "ASG": "=",
-            "ADD": "+",
-            "MUL": "*",
-            "COM": ",",
-            "AND": "∧",
-            "OR": "∨",
-            "REL": "r",
-            "QST": "?",  # Question mark for ternary
-            "COL": ":"  # Colon for ternary
+            "ID": "d",  # 标识符
+            "NUMBER": "i",  # 数值
+            "LPA": "(",  # 左括号
+            "RPA": ")",  # 右括号
+            "LBR": "[",  # 左中括号
+            "RBR": "]",  # 右中括号
+            "LCU": "{",  # 左大括号
+            "RCU": "}",  # 右大括号
+            "SCO": ";",  # 分号
+            "ASG": "=",  # 赋值
+            "ADD": "+",  # 加号
+            "MUL": "*",  # 乘号
+            "COM": ",",  # 逗号
+            "AND": "∧",  # 逻辑与
+            "OR": "∨",  # 逻辑或
+            "REL": "r",  # 关系运算符
+            "QST": "?",  # 三元运算符问号
+            "COL": ":"  # 三元运算符冒号
         }
         
         if token_type in token_map:
@@ -47,14 +46,13 @@ class Grammar:
     """处理文法解析和FIRST/FOLLOW集计算"""
     
     def __init__(self):
-        self.productions = defaultdict(list)
-        self.productions_list = []
-        self.first = {}
-        self.follow = {}
+        self.productions = defaultdict(list)  # 产生式字典
+        self.productions_list = []  # 产生式列表
+        self.first = {}  # FIRST集
+        self.follow = {}  # FOLLOW集
         self.initialize_grammar()
     
     def initialize_grammar(self):
-        """根据sentences.txt初始化文法，修复语法问题，并添加三元运算符"""
         grammar_rules = [
             ("P'", ["P"]),  # 0: 扩展开始产生式
             ("P", ["C", "Q"]),  # 1
@@ -90,7 +88,7 @@ class Grammar:
             ("E", ["E", "+", "E"]),  # 31
             ("E", ["E", "*", "E"]),  # 32
             ("E", ["(", "E", ")"]),  # 33
-            ("E", ["E", "?", "E", ":", "E"]),  # 34: 三元运算符
+            ("E", ["E", "?", "E", ":", "E"]),  # 34
             ("M", ["ε"]),  # 35
             ("M", ["M", "R", ","]),  # 36
             ("R", ["E"]),  # 37
@@ -173,7 +171,6 @@ class Grammar:
         
         self.follow['Q'].add('}')
         self.follow['S'].update({'}', ';', 'else'})
-        # Add ? and : to FOLLOW sets for ternary operator
         self.follow['E'].update({'?', ':', ')', ';', '}', ',', 'r', '+', '*', '∧', '∨'})
 
 
@@ -218,6 +215,7 @@ class SLRParser:
         self.build_parser()
     
     def closure(self, items):
+        """计算项集的闭包"""
         closure_set = set(items)
         changed = True
         
@@ -240,6 +238,7 @@ class SLRParser:
         return frozenset(closure_set)
     
     def goto(self, items, symbol):
+        """计算GOTO(I, X)"""
         moved_items = set()
         
         for item in items:
@@ -253,6 +252,7 @@ class SLRParser:
             return frozenset()
     
     def build_states(self):
+        """构建LR(0)项集的规范集"""
         start_item = Item(self.start_symbol, self.grammar.productions[self.start_symbol][0], 0)
         start_state = self.closure([start_item])
         
@@ -285,6 +285,7 @@ class SLRParser:
                     self.transitions[(current_idx, symbol)] = next_idx
     
     def build_tables(self):
+        """构建ACTION和GOTO表"""
         terminals = {'int', 'void', 'if', 'else', 'while', 'return',
                      '(', ')', '[', ']', '{', '}', ';', '=', '+', '*',
                      '∧', '∨', 'r', ',', 'd', 'i', '$', '?', ':'}
@@ -325,6 +326,7 @@ class SLRParser:
                             print(f"警告：找不到产生式 {prod}")
     
     def build_parser(self):
+        """构建解析器"""
         self.grammar.compute_first()
         self.grammar.compute_follow(self.start_symbol)
         self.build_states()
@@ -338,23 +340,25 @@ class SLRParserEngine:
         self.grammar = Grammar()
         self.parser = SLRParser(self.grammar, "P'")
         self.debug = True
-        self.intermediate_code = []  # Store quadruples
-        self.temp_count = 0  # Counter for temporary variables
-        self.label_count = 0  # Counter for labels
+        self.intermediate_code = []  # 存储四元式
+        self.temp_count = 0  # 临时变量计数
+        self.label_count = 0  # 标签计数
+        self.errors = []  # 存储错误信息
     
     def new_temp(self):
-        """Generate a new temporary variable"""
+        """生成新的临时变量"""
         self.temp_count += 1
         return f"t{self.temp_count}"
     
     def new_label(self):
-        """Generate a new label"""
+        """生成新标签"""
         self.label_count += 1
         return f"L{self.label_count}"
     
-    def parse_tokens(self, token_lines: List[str]) -> List[Tuple[str, str]]:
+    def parse_tokens(self, token_lines: List[str]) -> List[Tuple[str, str, int]]:
+        """解析token行，增加行号跟踪"""
         tokens = []
-        for line in token_lines:
+        for line_num, line in enumerate(token_lines, 1):
             line = line.strip()
             if not line:
                 continue
@@ -365,21 +369,22 @@ class SLRParserEngine:
                 if comma_pos != -1:
                     token_type = content[:comma_pos].strip()
                     token_val = content[comma_pos + 2:].strip()
-                    tokens.append((token_type, token_val))
+                    tokens.append((token_type, token_val, line_num))
                     continue
             
-            print(f"警告：无法解析token行: {line}")
+            self.errors.append(f"output.txt:{line_num}: 错误：无效的token格式：{line}")
         
-        if not tokens or tokens[-1] != ("$", "$"):
-            tokens.append(("$", "$"))
+        if not tokens or tokens[-1][0] != "$":
+            tokens.append(("$", "$", len(token_lines) + 1))
         return tokens
     
-    def parse(self, tokens: List[Tuple[str, str]]) -> bool:
+    def parse(self, tokens: List[Tuple[str, str, int]]) -> bool:
+        """执行SLR语法分析"""
         if self.debug:
             print("\n=== 映射后的终结符序列 ===")
-            for i, (token_type, token_val) in enumerate(tokens):
+            for i, (token_type, token_val, line_num) in enumerate(tokens):
                 mapped = TokenMapper.map_token_to_symbol(token_type, token_val)
-                print(f"{i:2d}: ({token_type:8}, {token_val:10}) -> '{mapped}'")
+                print(f"{i:2d}: ({token_type:8}, {token_val:10}, 行 {line_num}) -> '{mapped}'")
         
         state_stack = [0]
         symbol_stack = []
@@ -389,29 +394,36 @@ class SLRParserEngine:
         
         if self.debug:
             print(f"\n=== 语法分析过程 ===")
-            print(f"{'步骤':<4} {'状态栈':<20} {'符号栈':<25} {'输入':<15} {'动作':<15} {'中间代码':<30}")
-            print("-" * 100)
+            print(f"{'步骤':<4} {'状态栈':<20} {'符号栈':<25} {'输入':<20} {'动作':<15} {'中间代码':<30}")
+            print("-" * 110)
         
         while token_index < len(tokens):
             current_state = state_stack[-1]
-            token_type, token_val = tokens[token_index]
+            token_type, token_val, line_num = tokens[token_index]
             current_symbol = TokenMapper.map_token_to_symbol(token_type, token_val)
             
             action = self.parser.action_table[current_state].get(current_symbol)
             
-            code_gen = ""  # Intermediate code for this step
+            code_gen = ""
             
             if self.debug:
                 state_str = str(state_stack)
                 symbol_str = str(symbol_stack)
                 input_str = f"{current_symbol}({token_val})"
-                action_str = action if action else "ERROR"
-                print(f"{step:<4} {state_str:<20} {symbol_str:<25} {input_str:<15} {action_str:<15} {code_gen:<30}")
+                action_str = action if action else "错误"
+                print(f"{step:<4} {state_str:<20} {symbol_str:<25} {input_str:<20} {action_str:<15} {code_gen:<30}")
                 step += 1
             
             if action is None:
-                print(f"\n语法错误：在状态 {current_state} 遇到符号 '{current_symbol}' 时无对应动作")
-                print(f"当前状态可用动作：{list(self.parser.action_table[current_state].keys())}")
+                # 生成类似g++的错误信息
+                expected = sorted(self.parser.action_table[current_state].keys())
+                expected_str = ", ".join(f"'{s}'" for s in expected) if expected else "无"
+                context = " ".join(t[1] for t in tokens[max(0, token_index - 2):token_index + 3])
+                self.errors.append(
+                    f"output.txt:{line_num}: 错误：在 '{token_val}' 处发生语法错误 "
+                    f"(期望的符号：{expected_str})\n"
+                    f"    上下文：... {context} ..."
+                )
                 return False
             
             if action.startswith("s"):  # 移进
@@ -426,7 +438,7 @@ class SLRParserEngine:
                 lhs, rhs = self.grammar.productions_list[prod_idx]
                 
                 if self.debug:
-                    print(f"    规约使用产生式 {prod_idx}: {lhs} -> {' '.join(rhs)}")
+                    print(f"    归约使用产生式 {prod_idx}: {lhs} -> {' '.join(rhs)}")
                 
                 pop_count = 0 if rhs == ['ε'] else len(rhs)
                 popped_values = []
@@ -437,7 +449,7 @@ class SLRParserEngine:
                     del symbol_stack[-pop_count:]
                     del value_stack[-pop_count:]
                 
-                # Generate intermediate code for specific productions
+                # 生成中间代码
                 if lhs == "E":
                     if prod_idx == 27:  # E -> d = E
                         var, _, expr = popped_values
@@ -467,7 +479,6 @@ class SLRParserEngine:
                         true_label = self.new_label()
                         false_label = self.new_label()
                         end_label = self.new_label()
-                        # Generate quadruples for ternary
                         self.intermediate_code.append(("if", cond, None, true_label))
                         self.intermediate_code.append(("=", true_val, None, result))
                         self.intermediate_code.append(("goto", None, None, end_label))
@@ -492,8 +503,14 @@ class SLRParserEngine:
                 goto_state = self.parser.goto_table[current_state].get(lhs)
                 
                 if goto_state is None:
-                    print(f"GOTO错误：在状态 {current_state} 找不到符号 '{lhs}' 的转移")
-                    print(f"可用GOTO: {list(self.parser.goto_table[current_state].keys())}")
+                    expected = sorted(self.parser.goto_table[current_state].keys())
+                    expected_str = ", ".join(f"'{s}'" for s in expected) if expected else "无"
+                    context = " ".join(t[1] for t in tokens[max(0, token_index - 2):token_index + 3])
+                    self.errors.append(
+                        f"output.txt:{line_num}: 错误：非终结符 '{lhs}' 状态转移无效 "
+                        f"(期望的符号：{expected_str})\n"
+                        f"    上下文：... {context} ..."
+                    )
                     return False
                 
                 state_stack.append(goto_state)
@@ -507,7 +524,7 @@ class SLRParserEngine:
                 return True
             
             else:
-                print(f"未知动作：{action}")
+                self.errors.append(f"output.txt:{line_num}: 错误：未知动作 '{action}'")
                 return False
         
         return False
@@ -515,7 +532,7 @@ class SLRParserEngine:
 
 def main():
     """主函数"""
-    print("=== SLR(1)语法分析器 ===")
+    print("=== SLR(1) 语法分析器 ===")
     
     try:
         with open("output.txt", "r", encoding="utf-8") as f:
@@ -524,18 +541,23 @@ def main():
         engine = SLRParserEngine()
         tokens = engine.parse_tokens(token_lines)
         
-        print("=== 开始SLR语法分析 ===")
+        print("=== 开始 SLR 语法分析 ===")
         success = engine.parse(tokens)
         
         if success:
             print("\n语法分析成功！程序符合语法规范。")
         else:
             print("\n语法分析失败！程序存在语法错误。")
+            if engine.errors:
+                print("\n=== 错误信息 ===")
+                for error in engine.errors:
+                    print(error)
+                print(f"\n共发现 {len(engine.errors)} 个错误")
     
     except FileNotFoundError:
         print("错误：找不到文件 'output.txt'")
     except Exception as e:
-        print(f"运行时出错：{e}")
+        print(f"运行时错误：{e}")
         import traceback
         traceback.print_exc()
 
