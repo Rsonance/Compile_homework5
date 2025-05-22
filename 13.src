@@ -1,1 +1,1 @@
-int test() { int x; x=5; x=10; return x }; test();
+int test() { int x; int y; x=5; x=10; y=(x+3)*10; return x }; test()

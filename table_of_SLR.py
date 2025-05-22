@@ -1,14 +1,5 @@
 #!/usr/bin/env python
 # -*- coding: UTF-8 -*-
-"""
-@Project ：Compile_homework5
-@File    ：table_of_SLR.py
-@IDE     ：PyCharm
-@Author  ：ZCTong
-@Date    ：2025/5/22 14:31
-@Description: 构建 SLR(1) 解析表，采用面向对象设计。包括文法解析、项集管理、FIRST/FOLLOW 集计算和 ACTION/GOTO 表生成。
-              修复了表访问问题并提高了健壮性。
-"""
 
 from collections import defaultdict, deque
 
